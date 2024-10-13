@@ -1,0 +1,78 @@
+local http = game:GetService("HttpService")
+local originalRequest = http.RequestAsync
+
+-- Function to sanitize potentially sensitive information
+local function sanitize(data)
+    if type(data) ~= "string" then
+        return tostring(data)
+    end
+    -- Replace IP addresses with a placeholder
+    data = data:gsub("%d+%.%d+%.%d+%.%d+", "xxx.xxx.xxx.xxx")
+    -- Replace potential HWIDs with a placeholder
+    data = data:gsub("[%w%-]+%-%w+%-%w+%-%w+%-%w+", "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+    return data
+end
+
+-- Function to check for potentially malicious requests
+local function checkMalicious(url, method)
+    local suspicious = false
+    local loweredUrl = url:lower()
+    
+    if method == "POST" and (loweredUrl:find("login") or loweredUrl:find("auth")) then
+        suspicious = true
+    end
+    
+    if loweredUrl:find("token") or loweredUrl:find("key") then
+        suspicious = true
+    end
+    
+    return suspicious
+end
+
+-- Override the RequestAsync function
+http.RequestAsync = function(self, requestData)
+    local url = requestData.Url
+    local method = requestData.Method or "GET"
+    local headers = requestData.Headers or {}
+    local body = requestData.Body or ""
+    
+    print("--- HTTP Request ---")
+    print("URL:", sanitize(url))
+    print("Method:", method)
+    print("Headers:")
+    for k, v in pairs(headers) do
+        print("  " .. k .. ": " .. sanitize(v))
+    end
+    print("Body:", sanitize(body))
+    
+    if checkMalicious(url, method) then
+        print("WARNING: Potentially malicious request detected!")
+    end
+    
+    local success, response = pcall(function()
+        return originalRequest(self, requestData)
+    end)
+    
+    if success then
+        print("--- HTTP Response ---")
+        print("Status:", response.StatusCode)
+        print("Headers:")
+        for k, v in pairs(response.Headers) do
+            print("  " .. k .. ": " .. sanitize(v))
+        end
+        print("Body:", sanitize(response.Body))
+    else
+        print("--- HTTP Error ---")
+        print("Error:", response)
+    end
+    
+    print("----------------------")
+    
+    if success then
+        return response
+    else
+        error(response)
+    end
+end
+
+print("HTTP Spy activated. All HTTP requests will now be printed.")
